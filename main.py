@@ -6,7 +6,7 @@ import csv, io, re, unicodedata
 from collections import Counter
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Master List & Entry CSV Matcher", version="1.2.0")
+app = FastAPI(title="Master List & Entry CSV Matcher", version="1.3.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 MAX_FILE_BYTES = 25 * 1024 * 1024
 # Values that commonly represent missing/invalid candidate names or identifiers.
@@ -137,8 +137,10 @@ async def match_csvs(
     # one-off name matches, while still excluding blank/placeholder values.
     reference_values = {}
     master_counts = Counter()
-    entry_counts = Counter()
 
+    # Count usable candidate names ONLY in the Master List.
+    # A candidate qualifies only if their normalized name appears at least twice
+    # in the Master List and also appears in the Entry CSV.
     for row in rows1:
         raw_value = row.get(first_key, "")
         if not is_usable_match_value(raw_value):
@@ -148,23 +150,14 @@ async def match_csvs(
             master_counts[key] += 1
             reference_values.setdefault(key, raw_value)
 
-    for row in rows2:
-        raw_value = row.get(second_key, "")
-        if not is_usable_match_value(raw_value):
-            continue
-        key = normalize(raw_value, mode)
-        if key:
-            entry_counts[key] += 1
-
     matched = []
     for row in rows2:
         raw_value = row.get(second_key, "")
-        # Do not match blank values or placeholders such as NA/N/A/null.
+        # Never match blank values or placeholders such as NA/N/A/null.
         if not is_usable_match_value(raw_value):
             continue
         key = normalize(raw_value, mode)
-        if (key and key in reference_values and
-                (master_counts[key] >= 2 or entry_counts[key] >= 2)):
+        if key and key in reference_values and master_counts[key] >= 2:
             result_row = dict(row)
             if include_match_reason:
                 result_row["Matched Reference Value"] = reference_values[key]
